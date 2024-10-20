@@ -15,7 +15,7 @@ const config = {
     }
 };
 
-// Initialize the game
+// Initialize the game test1
 const game = new Phaser.Game(config);
 
 // Game variables
