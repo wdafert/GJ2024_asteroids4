@@ -37,6 +37,9 @@ let recordingText;
 let isRecording = false;
 let mediaRecorder;
 let audioChunks = [];
+let bearerToken = null;
+let processedAudioUrl = null;
+let transcriptionText = '';
 
 // Level configurations
 const levelConfigs = {
@@ -114,14 +117,17 @@ function create() {
         introText.setOrigin(0.5);
 
         recordingText = this.add.text(config.width / 2, config.height / 2 + 50,
-            'Press SPACE to start recording your voice for 3 seconds.\nSay something like "A chicken".\nThis will generate the sound for in-game use.',
+            'Authenticating...\nPlease wait.',
             { fontSize: '24px', fill: '#fff', align: 'center' }
         );
         recordingText.setOrigin(0.5);
 
-        // Bind the startRecording function to the scene and add it as a method
-        this.startRecording = startRecording.bind(this);
-        this.input.keyboard.on('keydown-SPACE', this.startRecording);
+        // Authenticate first, then set up recording
+        authenticate().then(() => {
+            recordingText.setText('Press SPACE to start recording your voice for 3 seconds.\nSay something like "A chicken".\nThis will generate the sound for in-game use.');
+            this.startRecording = startRecording.bind(this);
+            this.input.keyboard.on('keydown-SPACE', this.startRecording);
+        });
 
         console.log('Create function completed successfully');
     } catch (error) {
@@ -137,7 +143,14 @@ function startRecording() {
 
     navigator.mediaDevices.getUserMedia({ audio: true })
         .then(stream => {
-            mediaRecorder = new MediaRecorder(stream);
+            // Create MediaRecorder instance after getting the stream
+            let options = { mimeType: 'audio/webm' }; // or 'audio/ogg' if 'audio/webm' is not supported
+            if (MediaRecorder.isTypeSupported(options.mimeType)) {
+                mediaRecorder = new MediaRecorder(stream, options);
+            } else {
+                mediaRecorder = new MediaRecorder(stream);
+            }
+
             audioChunks = [];
 
             mediaRecorder.addEventListener("dataavailable", event => {
@@ -152,6 +165,11 @@ function startRecording() {
             mediaRecorder.start();
 
             this.time.delayedCall(3000, stopRecording, [], this);
+        })
+        .catch(error => {
+            console.error('Error accessing microphone:', error);
+            isRecording = false;
+            recordingText.setText('Error accessing microphone. Please try again.');
         });
 }
 
@@ -163,23 +181,61 @@ function stopRecording() {
     }
 }
 
-function createAudioFromBlob(audioBlob) {
-    const audioUrl = URL.createObjectURL(audioBlob);
+async function createAudioFromBlob(audioBlob) {
+    if (!bearerToken) {
+        console.error('No bearer token available. Please authenticate first.');
+        return;
+    }
 
-    // Load the audio file into the cache
-    this.load.audio('customBulletSound', audioUrl);
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'audio.webm'); // Adjusted the filename
 
-    // Start the loader to load the new audio file
-    this.load.start();
+    try {
+        const response = await fetch('https://gj2024api-0c10722c7282.herokuapp.com/process_audio', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${bearerToken}`,
+            },
+            body: formData,
+        });
 
-    // Wait for the loader to complete before starting the game
-    this.load.once('complete', () => {
-        // Now that the audio is loaded, we can create the sound
-        bulletSound = this.sound.add('customBulletSound', { loop: false });
+        if (!response.ok) {
+            throw new Error('API request failed');
+        }
 
-        // Start the game
-        this.time.delayedCall(1000, () => startGame(this), [], this);
-    });
+        const data = await response.json();
+        transcriptionText = data.transcription;
+
+        if (!data.audio_data) {
+            console.error('No audio data received from backend');
+            return;
+        }
+
+        // Decode base64 audio data
+        const binaryString = atob(data.audio_data);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        const audioContext = this.sound.context;
+
+        // Decode audio data
+        audioContext.decodeAudioData(bytes.buffer).then((audioBuffer) => {
+            console.log('Audio decoded successfully');
+            this.cache.audio.add('customBulletSound', audioBuffer);
+
+            bulletSound = this.sound.add('customBulletSound', { loop: false });
+            this.time.delayedCall(1000, () => startGame(this), [], this);
+        }).catch((error) => {
+            console.error('Error decoding audio data:', error);
+        });
+
+    } catch (error) {
+        console.error('Error processing audio:', error);
+  
+    }
 }
 
 function startGame(scene) {
@@ -198,6 +254,8 @@ function startGame(scene) {
     timeText = scene.add.text(32, 152, 'Time: 10', { fontSize: '32px', fill: '#fff' });
 
     setupLevel(scene);
+
+    displayTranscription(scene);
 }
 
 // Update function called every frame
@@ -317,7 +375,7 @@ function shootBullet(scene) {
         bullet.setCollideWorldBounds(true);
     }
 
-    // Play the custom recorded bullet sound
+    // Play the custom processed bullet sound
     if (bulletSound && bulletSound.play) {
         try {
             bulletSound.play();
@@ -470,3 +528,55 @@ window.onerror = function (message, source, lineno, colno, error) {
     console.error('Global error:', message, 'at', source, 'line', lineno, 'column', colno);
     console.error('Error object:', error);
 };
+
+// Add this function for authentication
+async function authenticate() {
+    try {
+        const response = await fetch('https://gj2024api-0c10722c7282.herokuapp.com/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                username: 'gamejam2024',
+                password: 'happytesting'
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Authentication failed');
+        }
+
+        const data = await response.json();
+        bearerToken = data.access_token;
+        console.log('Authentication successful');
+    } catch (error) {
+        console.error('Authentication error:', error);
+    }
+}
+
+// Add this function to display the transcription
+function displayTranscription(scene) {
+    if (transcriptionText) {
+        const transcriptionDisplay = scene.add.text(config.width / 2, config.height - 50, `Transcription: ${transcriptionText}`, { fontSize: '18px', fill: '#fff' });
+        transcriptionDisplay.setOrigin(0.5);
+    }
+}
+
+function updateBulletSound(newAudioBlob) {
+    console.log("Received new bullet sound audio blob:", newAudioBlob);
+    
+    // Create a new Audio object with the received blob
+    const newAudioUrl = URL.createObjectURL(newAudioBlob);
+    console.log("Created new audio URL:", newAudioUrl);
+    
+    bulletSound = new Audio(newAudioUrl);
+    console.log("Updated bulletSound with new audio");
+    
+    // Optional: Play the new sound once to verify it works
+    bulletSound.play().then(() => {
+        console.log("New bullet sound played successfully");
+    }).catch(error => {
+        console.error("Error playing new bullet sound:", error);
+    });
+}
