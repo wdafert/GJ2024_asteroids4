@@ -31,6 +31,8 @@ let timeText;
 let levelText;
 let score = 0;
 let lives = 3;
+// Add this new variable
+let bulletSound;
 
 // Level configurations
 const levelConfigs = {
@@ -93,6 +95,8 @@ function preload() {
             this.load.image(`bullet${level}`, `assets/level${level}/bullet.png`);
             this.load.image(`ufo${level}`, `assets/level${level}/ufo.png`);
         }
+        // Add this line to load the bullet sound
+        this.load.audio('bulletSound', 'assets/sound/level1/bullet.mp3');
         console.log('All assets loaded successfully');
     } catch (error) {
         console.error('Error loading assets:', error);
@@ -112,6 +116,9 @@ function create() {
         scoreText = this.add.text(32, 72, 'Score: 0', { fontSize: '32px', fill: '#fff' });
         livesText = this.add.text(32, 112, 'Lives: 3', { fontSize: '32px', fill: '#fff' });
         timeText = this.add.text(32, 152, 'Time: 10', { fontSize: '32px', fill: '#fff' });
+
+        // Add this line to create the bullet sound
+        bulletSound = this.sound.add('bulletSound');
 
         // Set up the initial level
         setupLevel(this);
@@ -249,6 +256,9 @@ function shootBullet(scene) {
         bullet.setBounce(1);
         bullet.setCollideWorldBounds(true);
     }
+
+    // Add this line to play the bullet sound
+    bulletSound.play();
 }
 
 // Shoot a bullet from an asteroid (level 2)
