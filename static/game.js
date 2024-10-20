@@ -294,6 +294,16 @@ function update() {
                 asteroids.getChildren().forEach(asteroid => {
                     shootBulletFromAsteroid(this, asteroid);
                 });
+                // Play the bullet sound once for all asteroids shooting
+                if (bulletSound && bulletSound.play) {
+                    try {
+                        bulletSound.pause();
+                        bulletSound.currentTime = 0;
+                        bulletSound.play();
+                    } catch (error) {
+                        console.error('Error playing bullet sound:', error);
+                    }
+                }
             }
         }
 
@@ -407,6 +417,19 @@ function shootBulletFromAsteroid(scene, asteroid) {
     bullet.setRotation(asteroid.rotation);
     scene.physics.velocityFromRotation(asteroid.rotation, 800, bullet.body.velocity);
     bullet.lifespan = 1000;
+
+    // Play the custom processed bullet sound
+    if (bulletSound && bulletSound.play) {
+        try {
+            // Stop the current playback if it's playing
+            bulletSound.pause();
+            bulletSound.currentTime = 0;
+            // Play the sound from the beginning
+            bulletSound.play();
+        } catch (error) {
+            console.error('Error playing bullet sound:', error);
+        }
+    }
 }
 
 // Handle bullet hitting a target (asteroid or ship)
@@ -632,3 +655,4 @@ function updateBulletSound(newAudioBlob) {
         console.error("Error playing new bullet sound:", error);
     });
 }
+
