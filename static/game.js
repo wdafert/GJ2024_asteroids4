@@ -1,8 +1,8 @@
 // Game configuration
 const config = {
     type: Phaser.AUTO,
-    width: 1800,
-    height: 900,
+    width: 1600,
+    height: 800,
     parent: 'game-container',
     scene: {
         preload: preload,
@@ -128,6 +128,13 @@ function create() {
             recordingText.setText('Press SPACE once to start recording your voice for 3 seconds.\n\nSay something like "A chicken".\n\nThis will generate the sound for in-game use.');
             this.startRecording = startRecording.bind(this);
             this.input.keyboard.on('keydown-SPACE', this.startRecording);
+        });
+
+        // Set up world bounds collision event
+        this.physics.world.on('worldbounds', function(body) {
+            if (currentLevel === 3 && body.gameObject && body.gameObject.texture.key === `bullet${currentLevel}`) {
+                handleBulletWallCollision(body.gameObject);
+            }
         });
 
         console.log('Create function completed successfully');
@@ -378,6 +385,8 @@ function shootBullet(scene) {
     if (currentLevel === 3) {
         bullet.setBounce(1);
         bullet.setCollideWorldBounds(true);
+        // Enable checking for world bounds collision
+        bullet.body.onWorldBounds = true;
     }
 
     // Play the custom processed bullet sound
@@ -629,4 +638,21 @@ function updateBulletSound(newAudioBlob) {
     }).catch(error => {
         console.error("Error playing new bullet sound:", error);
     });
+}
+
+// Add this new function to handle bullet-wall collisions
+function handleBulletWallCollision(bullet) {
+    // Calculate the new angle based on which wall was hit
+    let newAngle;
+    if (bullet.body.blocked.left || bullet.body.blocked.right) {
+        newAngle = -bullet.body.velocity.angle();
+    } else if (bullet.body.blocked.up || bullet.body.blocked.down) {
+        newAngle = Math.PI - bullet.body.velocity.angle();
+    }
+
+    // Set the new velocity
+    bullet.scene.physics.velocityFromRotation(newAngle, bullet.body.speed, bullet.body.velocity);
+
+    // Set the new rotation of the bullet sprite
+    bullet.setRotation(newAngle);
 }
