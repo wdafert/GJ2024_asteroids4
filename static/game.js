@@ -23,7 +23,7 @@ let ship;
 let cursors;
 let bullets;
 let asteroids;
-let currentLevel = 1;
+let currentLevel = 0; // Start at 0 for intro screen
 let levelTimer;
 let scoreText;
 let livesText;
@@ -31,8 +31,12 @@ let timeText;
 let levelText;
 let score = 0;
 let lives = 3;
-// Add this new variable
 let bulletSound;
+let introText;
+let recordingText;
+let isRecording = false;
+let mediaRecorder;
+let audioChunks = [];
 
 // Level configurations
 const levelConfigs = {
@@ -95,8 +99,6 @@ function preload() {
             this.load.image(`bullet${level}`, `assets/level${level}/bullet.png`);
             this.load.image(`ufo${level}`, `assets/level${level}/ufo.png`);
         }
-        // Add this line to load the bullet sound
-        this.load.audio('bulletSound', 'assets/sound/level1/bullet.mp3');
         console.log('All assets loaded successfully');
     } catch (error) {
         console.error('Error loading assets:', error);
@@ -107,21 +109,19 @@ function preload() {
 function create() {
     console.log('Create function started');
     try {
-        // Set up input, groups, and UI elements
-        cursors = this.input.keyboard.createCursorKeys();
-        bullets = this.physics.add.group();
-        asteroids = this.physics.add.group();
+        // Set up intro screen
+        introText = this.add.text(config.width / 2, config.height / 2 - 100, 'Paranoid Asteroids', { fontSize: '64px', fill: '#fff' });
+        introText.setOrigin(0.5);
 
-        levelText = this.add.text(32, 32, 'Level: 1', { fontSize: '32px', fill: '#fff' });
-        scoreText = this.add.text(32, 72, 'Score: 0', { fontSize: '32px', fill: '#fff' });
-        livesText = this.add.text(32, 112, 'Lives: 3', { fontSize: '32px', fill: '#fff' });
-        timeText = this.add.text(32, 152, 'Time: 10', { fontSize: '32px', fill: '#fff' });
+        recordingText = this.add.text(config.width / 2, config.height / 2 + 50,
+            'Press SPACE to start recording your voice for 3 seconds.\nSay something like "A chicken".\nThis will generate the sound for in-game use.',
+            { fontSize: '24px', fill: '#fff', align: 'center' }
+        );
+        recordingText.setOrigin(0.5);
 
-        // Add this line to create the bullet sound
-        bulletSound = this.sound.add('bulletSound');
-
-        // Set up the initial level
-        setupLevel(this);
+        // Bind the startRecording function to the scene and add it as a method
+        this.startRecording = startRecording.bind(this);
+        this.input.keyboard.on('keydown-SPACE', this.startRecording);
 
         console.log('Create function completed successfully');
     } catch (error) {
@@ -129,8 +129,81 @@ function create() {
     }
 }
 
+function startRecording() {
+    if (isRecording) return;
+
+    isRecording = true;
+    recordingText.setText('Recording...');
+
+    navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.addEventListener("dataavailable", event => {
+                audioChunks.push(event.data);
+            });
+
+            mediaRecorder.addEventListener("stop", () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+                createAudioFromBlob.call(this, audioBlob);
+            });
+
+            mediaRecorder.start();
+
+            this.time.delayedCall(3000, stopRecording, [], this);
+        });
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        isRecording = false;
+        recordingText.setText('Recording complete. Starting game...');
+    }
+}
+
+function createAudioFromBlob(audioBlob) {
+    const audioUrl = URL.createObjectURL(audioBlob);
+
+    // Load the audio file into the cache
+    this.load.audio('customBulletSound', audioUrl);
+
+    // Start the loader to load the new audio file
+    this.load.start();
+
+    // Wait for the loader to complete before starting the game
+    this.load.once('complete', () => {
+        // Now that the audio is loaded, we can create the sound
+        bulletSound = this.sound.add('customBulletSound', { loop: false });
+
+        // Start the game
+        this.time.delayedCall(1000, () => startGame(this), [], this);
+    });
+}
+
+function startGame(scene) {
+    currentLevel = 1;
+    introText.destroy();
+    recordingText.destroy();
+
+    // Initialize game elements
+    cursors = scene.input.keyboard.createCursorKeys();
+    bullets = scene.physics.add.group();
+    asteroids = scene.physics.add.group();
+
+    levelText = scene.add.text(32, 32, 'Level: 1', { fontSize: '32px', fill: '#fff' });
+    scoreText = scene.add.text(32, 72, 'Score: 0', { fontSize: '32px', fill: '#fff' });
+    livesText = scene.add.text(32, 112, 'Lives: 3', { fontSize: '32px', fill: '#fff' });
+    timeText = scene.add.text(32, 152, 'Time: 10', { fontSize: '32px', fill: '#fff' });
+
+    setupLevel(scene);
+}
+
 // Update function called every frame
 function update() {
+    if (currentLevel === 0) return; // Don't update game logic on intro screen
+
     try {
         const levelConfig = levelConfigs[currentLevel];
 
@@ -190,28 +263,15 @@ function setupLevel(scene) {
     ship.setImmovable(!levelConfig.shipControl);
 
     // Clear existing bullets and asteroids
-    asteroids.clear(true, true);
     bullets.clear(true, true);
+    asteroids.clear(true, true);
 
     // Spawn new asteroids
     spawnAsteroids(scene, levelConfig.asteroidCount, !levelConfig.asteroidMovement);
 
-    // Set up collisions based on level
-    if (currentLevel === 2) {
-        scene.physics.add.collider(bullets, ship, bulletHitShipLevel2, null, scene);
-    } else {
-        scene.physics.add.collider(bullets, asteroids, bulletHitTarget, null, scene);
-        scene.physics.add.collider(ship, asteroids, shipHitAsteroid, null, scene);
-        // Add collision handler for level 3
-        if (currentLevel === 3) {
-            scene.physics.add.collider(ship, bullets, shipHitBullet, null, scene);
-        }
-    }
-
-    // Spawn UFO if needed
-    if (levelConfig.ufoSpawn) {
-        spawnUFO(scene);
-    }
+    // Set up collisions
+    scene.physics.add.collider(bullets, asteroids, bulletHitTarget, null, scene);
+    scene.physics.add.collider(ship, asteroids, shipHitAsteroid, null, scene);
 
     // Set up level timer
     if (levelTimer) levelTimer.remove();
@@ -245,7 +305,7 @@ function shootBullet(scene) {
     bullet.setScale(0.2);
     bullet.setRotation(ship.rotation);
     scene.physics.velocityFromRotation(ship.rotation, 800, bullet.body.velocity);
-    
+
     // Set lifespan for non-level 3 bullets
     if (currentLevel !== 3) {
         bullet.lifespan = 1000;
@@ -257,8 +317,14 @@ function shootBullet(scene) {
         bullet.setCollideWorldBounds(true);
     }
 
-    // Add this line to play the bullet sound
-    bulletSound.play();
+    // Play the custom recorded bullet sound
+    if (bulletSound && bulletSound.play) {
+        try {
+            bulletSound.play();
+        } catch (error) {
+            console.error('Error playing bullet sound:', error);
+        }
+    }
 }
 
 // Shoot a bullet from an asteroid (level 2)
@@ -296,33 +362,10 @@ function spawnAsteroids(scene, count, fixedPositions) {
 
 // Handle bullet hitting a target (asteroid or ship)
 function bulletHitTarget(bullet, target) {
-    if (target !== ship) {
-        const levelConfig = levelConfigs[currentLevel];
-        if (levelConfig.asteroidSplits && target.texture.key.includes('asteroid')) {
-            splitAsteroid(this, target);
-        } else {
-            target.destroy();
-        }
-        score += 10;
-        scoreText.setText('Score: ' + score);
-    }
     bullet.destroy();
-}
-
-// Split an asteroid into smaller asteroids
-function splitAsteroid(scene, asteroid) {
-    console.log('Splitting asteroid');
-    const smallAsteroidCount = 2;
-    for (let i = 0; i < smallAsteroidCount; i++) {
-        const smallAsteroid = asteroids.create(asteroid.x, asteroid.y, `asteroid${currentLevel}`);
-        smallAsteroid.setScale(asteroid.scale * 0.5); // Half the size of the original
-        smallAsteroid.setVelocity(
-            Phaser.Math.Between(-150, 150),
-            Phaser.Math.Between(-150, 150)
-        );
-    }
-    asteroid.destroy();
-    console.log('Asteroid split completed');
+    target.destroy();
+    score += 10;
+    scoreText.setText('Score: ' + score);
 }
 
 // Spawn a UFO (level 5)
@@ -381,11 +424,14 @@ function bulletHitShipLevel2(bullet, ship) {
 
 // Handle ship hitting an asteroid
 function shipHitAsteroid(ship, asteroid) {
-    if (!levelConfigs[currentLevel].asteroidsBullets) {
-        asteroid.destroy();
-        lives--;
-        livesText.setText('Lives: ' + lives);
-        checkGameOver(this.scene);
+    asteroid.destroy();
+    lives--;
+    livesText.setText('Lives: ' + lives);
+    if (lives <= 0) {
+        // Game over logic
+        currentLevel = 0;
+        ship.destroy();
+        // You might want to add a game over screen here
     }
 }
 
@@ -400,26 +446,12 @@ function checkGameOver(scene) {
 // Move to the next level or restart the game
 function nextLevel(scene) {
     currentLevel++;
-    console.log('Moving to level:', currentLevel);
     if (currentLevel > 5) {
-        console.log('Game completed');
-        scene.scene.restart();
-        currentLevel = 1;
+        // Game completed logic
+        currentLevel = 0;
+        // You might want to add a game completed screen here
     } else {
-        if (levelTimer) levelTimer.remove(); // Ensure any existing timer is removed
-        try {
-            setupLevel(scene);
-        } catch (error) {
-            console.error('Error setting up level:', error);
-            // Attempt to recover by moving to the next level or restarting the game
-            if (currentLevel < 5) {
-                currentLevel++;
-                setupLevel(scene);
-            } else {
-                scene.scene.restart();
-                currentLevel = 1;
-            }
-        }
+        setupLevel(scene);
     }
 }
 
@@ -434,7 +466,7 @@ function shipHitBullet(ship, bullet) {
 }
 
 // Global error handler
-window.onerror = function(message, source, lineno, colno, error) {
+window.onerror = function (message, source, lineno, colno, error) {
     console.error('Global error:', message, 'at', source, 'line', lineno, 'column', colno);
     console.error('Error object:', error);
 };
