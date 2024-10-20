@@ -16,7 +16,13 @@ This project is an Asteroids-style game created for Game Jam 2024.
 
 ## Technologies Used
 
-- [List the technologies, languages, or frameworks used in your project]
+- Python (Backend)
+- HTML/CSS/JavaScript (Frontend)
+- Heroku (Hosting)
+
+## Deployment
+
+This project is configured to be deployed on Heroku. The Python backend serves the static frontend files.
 
 ## Contributing
 
