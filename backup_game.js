@@ -40,13 +40,12 @@ let audioChunks = [];
 let bearerToken = null;
 let processedAudioUrl = null;
 let transcriptionText = '';
-let transcriptionDisplayed = false;
 
 // Level configurations
 const levelConfigs = {
     1: {
         duration: 5000,
-        asteroidCount: 7,
+        asteroidCount: 5,
         shipControl: true,
         asteroidsBullets: false,
         shipRotates: true,
@@ -256,11 +255,7 @@ function startGame(scene) {
 
     setupLevel(scene);
 
-    // Only display transcription if it hasn't been displayed before
-    if (!transcriptionDisplayed) {
-        displayTranscription(scene);
-        transcriptionDisplayed = true;
-    }
+    displayTranscription(scene);
 }
 
 // Update function called every frame
@@ -383,10 +378,6 @@ function shootBullet(scene) {
     // Play the custom processed bullet sound
     if (bulletSound && bulletSound.play) {
         try {
-            // Stop the current playback if it's playing
-            bulletSound.pause();
-            bulletSound.currentTime = 0;
-            // Play the sound from the beginning
             bulletSound.play();
         } catch (error) {
             console.error('Error playing bullet sound:', error);
@@ -406,48 +397,6 @@ function shootBulletFromAsteroid(scene, asteroid) {
     bullet.lifespan = 1000;
 }
 
-// Handle bullet hitting a target (asteroid or ship)
-function bulletHitTarget(bullet, target) {
-    bullet.destroy();
-    
-    if (target.texture.key.startsWith('asteroid')) {
-        splitAsteroid(this, target);
-    } else {
-        target.destroy();
-    }
-    
-    score += 10;
-    scoreText.setText('Score: ' + score);
-}
-
-// Split asteroid into smaller pieces
-function splitAsteroid(scene, asteroid) {
-    const numPieces = 2;
-    const newScale = asteroid.scale * 0.6; // New asteroids are 60% the size of the original
-
-    if (newScale < 0.05) {
-        // If the asteroid becomes too small, just destroy it
-        asteroid.destroy();
-        return;
-    }
-
-    for (let i = 0; i < numPieces; i++) {
-        const piece = asteroids.create(asteroid.x, asteroid.y, asteroid.texture.key);
-        piece.setScale(newScale);
-        
-        // Set random velocity for the new piece
-        const angle = Phaser.Math.Between(0, 360);
-        const speed = Phaser.Math.Between(50, 150);
-        scene.physics.velocityFromAngle(angle, speed, piece.body.velocity);
-        
-        // Set random rotation
-        piece.setAngularVelocity(Phaser.Math.Between(-200, 200));
-    }
-
-    // Destroy the original asteroid
-    asteroid.destroy();
-}
-
 // Spawn asteroids for a level
 function spawnAsteroids(scene, count, fixedPositions) {
     for (let i = 0; i < count; i++) {
@@ -462,17 +411,19 @@ function spawnAsteroids(scene, count, fixedPositions) {
             y = Phaser.Math.Between(0, config.height);
         }
         const asteroid = asteroids.create(x, y, `asteroid${currentLevel}`);
-        
-        // Set the scale based on the current level
         asteroid.setScale(0.2);
-        
         if (!fixedPositions) {
             asteroid.setVelocity(Phaser.Math.Between(-200, 200), Phaser.Math.Between(-200, 200));
         }
-        
-        // Add random rotation
-        asteroid.setAngularVelocity(Phaser.Math.Between(-100, 100));
     }
+}
+
+// Handle bullet hitting a target (asteroid or ship)
+function bulletHitTarget(bullet, target) {
+    bullet.destroy();
+    target.destroy();
+    score += 10;
+    scoreText.setText('Score: ' + score);
 }
 
 // Spawn a UFO (level 5)
@@ -555,12 +506,11 @@ function nextLevel(scene) {
     currentLevel++;
     if (currentLevel > 5) {
         // Game completed logic
-        currentLevel = 1; // Reset to level 1 instead of 0
-        score = 0; // Reset score
-        lives = 3; // Reset lives
-        // You might want to add a game completed screen here before restarting
+        currentLevel = 0;
+        // You might want to add a game completed screen here
+    } else {
+        setupLevel(scene);
     }
-    setupLevel(scene);
 }
 
 // Handle ship hitting a bullet in level 3
