@@ -2,7 +2,7 @@
 const config = {
     type: Phaser.AUTO,
     width: 1600,
-    height: 1200,
+    height: 1000,
     parent: 'game-container',
     scene: {
         preload: preload,
@@ -113,7 +113,7 @@ function create() {
     console.log('Create function started');
     try {
         // Set up intro screen
-        introText = this.add.text(config.width / 2, config.height / 2 - 100, 'Paranoid Asteroids', { fontSize: '64px', fill: '#fff' });
+        introText = this.add.text(config.width / 2, config.height / 2 - 250, 'Paranoid Asteroids', { fontSize: '64px', fill: '#fff' });
         introText.setOrigin(0.5);
 
         recordingText = this.add.text(config.width / 2, config.height / 2 + 50,
@@ -124,7 +124,7 @@ function create() {
 
         // Authenticate first, then set up recording
         authenticate().then(() => {
-            recordingText.setText('Press SPACE to start recording your voice for 3 seconds.\nSay something like "A chicken".\nThis will generate the sound for in-game use.');
+            recordingText.setText('Press SPACE once to start recording your voice for 3 seconds.\n\nSay something like "A chicken".\n\nThis will generate the sound for in-game use.');
             this.startRecording = startRecording.bind(this);
             this.input.keyboard.on('keydown-SPACE', this.startRecording);
         });
@@ -177,7 +177,7 @@ function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
         isRecording = false;
-        recordingText.setText('Recording complete. Starting game...');
+        recordingText.setText('Recording complete. Game will start shortly.\n\n\n\n\n\n\n\n----\nYour Space Adventure is Brought to You By:\nAlexandre Abreu - Audio Designer\nBruno Lima - Code Genius\nMarcel Jardim - Graphic Artist\nWolfgang Dafert - AI Mananger');
     }
 }
 
