@@ -40,6 +40,7 @@ let audioChunks = [];
 let bearerToken = null;
 let processedAudioUrl = null;
 let transcriptionText = '';
+let isSpaceLocked = false;
 
 // Level configurations
 const levelConfigs = {
@@ -81,7 +82,7 @@ const levelConfigs = {
     },
     5: {
         duration: 5000,
-        asteroidCount: 8,
+        asteroidCount: 6,
         shipControl: true,
         asteroidsBullets: true,
         shipRotates: true,
@@ -126,7 +127,12 @@ function create() {
         authenticate().then(() => {
             recordingText.setText('Press SPACE once to start recording your voice for 3 seconds.\n\nSay something like "A chicken".\n\nThis will generate the sound for in-game use.');
             this.startRecording = startRecording.bind(this);
-            this.input.keyboard.on('keydown-SPACE', this.startRecording);
+            this.input.keyboard.on('keydown-SPACE', () => {
+                if (!isSpaceLocked) {
+                    isSpaceLocked = true;
+                    this.startRecording();
+                }
+            });
         });
 
         console.log('Create function completed successfully');
@@ -169,6 +175,7 @@ function startRecording() {
         .catch(error => {
             console.error('Error accessing microphone:', error);
             isRecording = false;
+            isSpaceLocked = false; // Unlock space in case of error
             recordingText.setText('Error accessing microphone. Please try again.');
         });
 }
@@ -177,7 +184,8 @@ function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
         isRecording = false;
-        recordingText.setText('Recording complete. Game will start shortly.\n\n\n\n\n\n\n\n----\nYour Space Adventure is Brought to You By:\nAlexandre Abreu - Audio Designer\nBruno Lima - Code Genius\nMarcel Jardim - Graphic Artist\nWolfgang Dafert - AI Mananger');
+        // We keep isSpaceLocked true here, as we don't want to allow re-recording
+        recordingText.setText('Recording complete. \n\nGame will start shortly.\n\n\n\n\n\n\n\n----\nYour Space Adventure is Brought to You By:\nAlexandre Abreu - Audio Designer\nBruno Lima - Code Genius\nMarcel Jardim - Graphic Artist\nWolfgang Dafert - AI Mananger');
     }
 }
 
