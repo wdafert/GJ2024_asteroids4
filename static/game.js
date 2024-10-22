@@ -35,6 +35,8 @@ let bulletSound;
 let introText;
 let versionText;
 let recordingText;
+let progressBarBackground;
+let progressBarFill;
 let isRecording = false;
 let mediaRecorder;
 let audioChunks = [];
@@ -43,6 +45,13 @@ let processedAudioUrl = null;
 let transcriptionText = '';
 let isSpaceLocked = false;
 let endScreenElements = [];
+let recordingStartTime = 0;
+let recordingTimerEvent;
+let maxRecordingTimerEvent;
+
+// New global variables for UFO
+let ufo;
+let ufoShootingEvent;
 
 // Level configurations
 const levelConfigs = {
@@ -120,24 +129,43 @@ function create() {
             introText = this.add.text(config.width / 2, config.height / 2 - 250, 'Paranoid Asteroids', { fontSize: '64px', fill: '#fff' });
             introText.setOrigin(0.5);
 
-            // Add version text below the title
-            versionText = this.add.text(config.width / 2, config.height / 2 - 180, 'Game version 0.1', { fontSize: '32px', fill: '#fff' });
+            // Update version text
+            versionText = this.add.text(config.width / 2, config.height / 2 - 180, 'v0.2', { fontSize: '32px', fill: '#fff' });
             versionText.setOrigin(0.5);
 
+            // Set up instructions text
             recordingText = this.add.text(config.width / 2, config.height / 2 + 50,
-                'Authenticating...\nPlease wait.',
-                { fontSize: '24px', fill: '#fff', align: 'center' }
+                'Press and hold SPACE to record your voice.\n' +
+                'Say something like "A chicken".\n' +
+                'This will use generative AI to create in-game sound.',
+                { fontSize: '24px', fill: '#ddd', align: 'center' }
             );
             recordingText.setOrigin(0.5);
 
+            // Set up progress bar background (hidden initially)
+            progressBarBackground = this.add.graphics();
+            progressBarBackground.fillStyle(0x555555, 1); // Dark gray background
+            progressBarBackground.fillRect(config.width / 2 - 150, config.height / 2 + 200, 300, 30);
+            progressBarBackground.setVisible(false);
+
+            // Set up progress bar fill (hidden initially)
+            progressBarFill = this.add.graphics();
+            progressBarFill.fillStyle(0xffffff, 1); // White fill
+            progressBarFill.fillRect(config.width / 2 - 148, config.height / 2 + 202, 0, 26);
+            progressBarFill.setVisible(false);
+
             // Authenticate first, then set up recording
             authenticate.call(this).then(() => {
-                recordingText.setText('Press SPACE once to start recording your voice for 3 seconds.\n\nSay something like "A chicken".\n\nThis will generate the sound for in-game use.');
-                this.startRecording = startRecording.bind(this);
+                // Set up key listeners for SPACE bar with debouncing
                 this.input.keyboard.on('keydown-SPACE', () => {
-                    if (!isSpaceLocked) {
-                        isSpaceLocked = true;
-                        this.startRecording();
+                    if (!isRecording && !isSpaceLocked) {
+                        startRecording.call(this);
+                    }
+                });
+
+                this.input.keyboard.on('keyup-SPACE', () => {
+                    if (isRecording) {
+                        stopRecording.call(this);
                     }
                 });
             });
@@ -150,11 +178,21 @@ function create() {
 }
 
 function startRecording() {
-    if (isRecording) return;
-
     isRecording = true;
-    recordingText.setText('Recording...');
+    isSpaceLocked = true; // Lock space bar immediately when recording starts
+    recordingStartTime = this.time.now;
 
+    // Update recording text to indicate recording is in progress
+    recordingText.setText('... Recording');
+
+    // Show progress bar
+    progressBarBackground.setVisible(true);
+    progressBarFill.setVisible(true);
+    progressBarFill.clear();
+    progressBarFill.fillStyle(0xffffff, 1); // White fill
+    progressBarFill.fillRect(config.width / 2 - 148, config.height / 2 + 202, 0, 26);
+
+    // Start media recording
     navigator.mediaDevices.getUserMedia({ audio: true })
         .then(stream => {
             // Create MediaRecorder instance after getting the stream
@@ -178,22 +216,85 @@ function startRecording() {
 
             mediaRecorder.start();
 
-            this.time.delayedCall(3000, stopRecording, [], this);
+            // Start a timer to enforce maximum recording duration (7.5 seconds)
+            maxRecordingTimerEvent = this.time.delayedCall(7500, () => {
+                if (isRecording) {
+                    stopRecording.call(this);
+                }
+            }, [], this);
+
+            // Start updating the progress bar
+            recordingTimerEvent = this.time.addEvent({
+                delay: 100,
+                callback: updateProgressBar,
+                callbackScope: this,
+                loop: true
+            });
         })
         .catch(error => {
             console.error('Error accessing microphone:', error);
             isRecording = false;
             isSpaceLocked = false; // Unlock space in case of error
             recordingText.setText('Error accessing microphone. Please try again.');
+            progressBarBackground.setVisible(false);
+            progressBarFill.setVisible(false);
         });
 }
 
 function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+    const recordingDuration = (this.time.now - recordingStartTime) / 1000; // in seconds
+
+    if (recordingDuration < 0.3) {
+        // Too short, do not proceed
+        console.log('Recording was too short. Returning to start screen.');
+        resetToStartScreen.call(this);
+    } else {
+        // Proceed with stopping the recording
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+
+        // Reset recording text
+        recordingText.setText('\n\n\n\n\n\n\n\nRecording complete!\n\nGame will start shortly.\n\n\n\n----\nYour Space Adventure is Brought to You By:\nAlexandre Abreu - Audio Designer\nBruno Lima - Code Genius\nMarcel Jardim - Graphic Artist\nWolfgang Dafert - AI Manager');
+
+        // Hide progress bar
+        progressBarBackground.setVisible(false);
+        progressBarFill.setVisible(false);
+
+        // Clear the maximum recording timer
+        if (maxRecordingTimerEvent) {
+            maxRecordingTimerEvent.remove(false);
+        }
+
+        // Clear the progress bar fill
+        progressBarFill.clear();
+        progressBarFill.fillStyle(0xffffff, 1); // White fill
+        progressBarFill.fillRect(config.width / 2 - 148, config.height / 2 + 202, 0, 26);
+
         isRecording = false;
-        // We keep isSpaceLocked true here, as we don't want to allow re-recording
-        recordingText.setText('Recording complete. \n\nGame will start shortly.\n\n\n\n\n\n\n\n----\nYour Space Adventure is Brought to You By:\nAlexandre Abreu - Audio Designer\nBruno Lima - Code Genius\nMarcel Jardim - Graphic Artist\nWolfgang Dafert - AI Manager');
+        // isSpaceLocked remains true after successful recording
+
+        // Stop updating the progress bar
+        if (recordingTimerEvent) {
+            recordingTimerEvent.remove(false);
+        }
+    }
+}
+
+function updateProgressBar() {
+    if (!isRecording) return;
+
+    const elapsed = this.time.now - recordingStartTime; // in ms
+    const progress = Phaser.Math.Clamp(elapsed / 7500, 0, 1); // Clamp between 0 and 1
+
+    // Update the progress bar fill
+    progressBarFill.clear();
+    progressBarFill.fillStyle(0xffffff, 1); // White fill
+    progressBarFill.fillRect(config.width / 2 - 148, config.height / 2 + 202, 300 * progress, 26);
+
+    // If recording exceeds 7.5 seconds, stop recording
+    if (progress >= 1) {
+        stopRecording.call(this);
     }
 }
 
@@ -250,7 +351,6 @@ async function createAudioFromBlob(audioBlob) {
 
     } catch (error) {
         console.error('Error processing audio:', error);
-
     }
 }
 
@@ -515,12 +615,12 @@ function spawnAsteroids(scene, count, fixedPositions) {
 
 // Spawn a UFO (level 5)
 function spawnUFO(scene) {
-    const ufo = scene.physics.add.image(0, Phaser.Math.Between(0, config.height), `ufo${currentLevel}`);
+    ufo = scene.physics.add.image(0, Phaser.Math.Between(0, config.height), `ufo${currentLevel}`);
     ufo.setScale(0.15);
     ufo.setVelocityX(100);
 
-    // Set up UFO shooting
-    scene.time.addEvent({
+    // Store the shooting event
+    ufoShootingEvent = scene.time.addEvent({
         delay: 2000,
         callback: () => {
             if (ufo.active) {
@@ -530,12 +630,18 @@ function spawnUFO(scene) {
         loop: true
     });
 
-    // Set up UFO collisions
+    // Set up UFO collisions and remove the shooting event when UFO is destroyed
     scene.physics.add.collider(bullets, ufo, (bullet, ufo) => {
         bullet.destroy();
         ufo.destroy();
         score += 50;
         scoreText.setText('Score: ' + score);
+
+        // Remove the shooting event
+        if (ufoShootingEvent) {
+            ufoShootingEvent.remove();
+            ufoShootingEvent = null;
+        }
     });
 
     scene.physics.add.collider(ship, ufo, () => {
@@ -543,6 +649,12 @@ function spawnUFO(scene) {
         lives--;
         livesText.setText('Lives: ' + lives);
         checkGameOver(scene);
+
+        // Remove the shooting event
+        if (ufoShootingEvent) {
+            ufoShootingEvent.remove();
+            ufoShootingEvent = null;
+        }
     });
 }
 
@@ -681,6 +793,17 @@ function clearGameElements(scene) {
     if (scoreText) scoreText.destroy();
     if (livesText) livesText.destroy();
     if (timeText) timeText.destroy();
+
+    // Destroy the UFO and remove its shooting event
+    if (ufo) {
+        ufo.destroy();
+        ufo = null;
+    }
+    if (ufoShootingEvent) {
+        ufoShootingEvent.remove();
+        ufoShootingEvent = null;
+    }
+
     endScreenElements.forEach(element => element.destroy());
     endScreenElements = [];
 }
@@ -705,6 +828,36 @@ function showEndScreen(scene) {
     });
 }
 
+// Function to reset to the start screen after a short recording press
+function resetToStartScreen() {
+    // Hide progress bar
+    progressBarBackground.setVisible(false);
+    progressBarFill.setVisible(false);
+
+    // Reset progress bar
+    progressBarFill.clear();
+    progressBarFill.fillStyle(0xffffff, 1); // White fill
+    progressBarFill.fillRect(config.width / 2 - 148, config.height / 2 + 202, 0, 26);
+
+    // Reset recording text to instructions
+    recordingText.setText('Press and hold SPACE to start recording your voice.\n' +
+        'Say something like "A chicken".\n' +
+        'This will generate the sound for in-game use.');
+
+    isRecording = false;
+    isSpaceLocked = false; // Unlock space bar after resetting
+
+    // Stop updating the progress bar
+    if (recordingTimerEvent) {
+        recordingTimerEvent.remove(false);
+    }
+
+    // Clear media recorder if it's still active
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+    }
+}
+
 // Function to restart the game
 function restartGame(scene) {
     // Reset all game variables
@@ -722,24 +875,43 @@ function restartGame(scene) {
     introText = scene.add.text(config.width / 2, config.height / 2 - 250, 'Paranoid Asteroids', { fontSize: '64px', fill: '#fff' });
     introText.setOrigin(0.5);
 
-    // Add version text below the title
-    versionText = scene.add.text(config.width / 2, config.height / 2 - 180, 'Game version 0.1', { fontSize: '32px', fill: '#fff' });
+    // Update version text
+    versionText = scene.add.text(config.width / 2, config.height / 2 - 180, 'v0.2', { fontSize: '32px', fill: '#fff' });
     versionText.setOrigin(0.5);
 
+    // Set up instructions text
     recordingText = scene.add.text(config.width / 2, config.height / 2 + 50,
-        'Authenticating...\nPlease wait.',
+        'Press and hold SPACE to start recording your voice.\n' +
+        'Say something like "A chicken".\n' +
+        'This will generate the sound for in-game use.',
         { fontSize: '24px', fill: '#fff', align: 'center' }
     );
     recordingText.setOrigin(0.5);
 
+    // Set up progress bar background (hidden initially)
+    progressBarBackground = scene.add.graphics();
+    progressBarBackground.fillStyle(0x555555, 1); // Dark gray background
+    progressBarBackground.fillRect(config.width / 2 - 150, config.height / 2 + 200, 300, 30);
+    progressBarBackground.setVisible(false);
+
+    // Set up progress bar fill (hidden initially)
+    progressBarFill = scene.add.graphics();
+    progressBarFill.fillStyle(0xffffff, 1); // White fill
+    progressBarFill.fillRect(config.width / 2 - 148, config.height / 2 + 202, 0, 26);
+    progressBarFill.setVisible(false);
+
     // Authenticate first, then set up recording
     authenticate.call(scene).then(() => {
-        recordingText.setText('Press SPACE once to start recording your voice for 3 seconds.\n\nSay something like "A chicken".\n\nThis will generate the sound for in-game use.');
-        scene.startRecording = startRecording.bind(scene);
+        // Set up key listeners for SPACE bar with debouncing
         scene.input.keyboard.on('keydown-SPACE', () => {
-            if (!isSpaceLocked) {
-                isSpaceLocked = true;
-                scene.startRecording();
+            if (!isRecording && !isSpaceLocked) {
+                startRecording.call(scene);
+            }
+        });
+
+        scene.input.keyboard.on('keyup-SPACE', () => {
+            if (isRecording) {
+                stopRecording.call(scene);
             }
         });
     });
