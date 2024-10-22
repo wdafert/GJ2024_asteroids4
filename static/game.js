@@ -15,7 +15,7 @@ const config = {
     }
 };
 
-// Initialize the game test1
+// Initialize the game
 const game = new Phaser.Game(config);
 
 // Game variables
@@ -33,6 +33,7 @@ let score = 0;
 let lives = 3;
 let bulletSound;
 let introText;
+let versionText;
 let recordingText;
 let isRecording = false;
 let mediaRecorder;
@@ -41,6 +42,7 @@ let bearerToken = null;
 let processedAudioUrl = null;
 let transcriptionText = '';
 let isSpaceLocked = false;
+let endScreenElements = [];
 
 // Level configurations
 const levelConfigs = {
@@ -113,27 +115,33 @@ function preload() {
 function create() {
     console.log('Create function started');
     try {
-        // Set up intro screen
-        introText = this.add.text(config.width / 2, config.height / 2 - 250, 'Paranoid Asteroids', { fontSize: '64px', fill: '#fff' });
-        introText.setOrigin(0.5);
+        if (currentLevel === 0) {
+            // Set up intro screen
+            introText = this.add.text(config.width / 2, config.height / 2 - 250, 'Paranoid Asteroids', { fontSize: '64px', fill: '#fff' });
+            introText.setOrigin(0.5);
 
-        recordingText = this.add.text(config.width / 2, config.height / 2 + 50,
-            'Authenticating...\nPlease wait.',
-            { fontSize: '24px', fill: '#fff', align: 'center' }
-        );
-        recordingText.setOrigin(0.5);
+            // Add version text below the title
+            versionText = this.add.text(config.width / 2, config.height / 2 - 180, 'Game version 0.1', { fontSize: '32px', fill: '#fff' });
+            versionText.setOrigin(0.5);
 
-        // Authenticate first, then set up recording
-        authenticate().then(() => {
-            recordingText.setText('Press SPACE once to start recording your voice for 3 seconds.\n\nSay something like "A chicken".\n\nThis will generate the sound for in-game use.');
-            this.startRecording = startRecording.bind(this);
-            this.input.keyboard.on('keydown-SPACE', () => {
-                if (!isSpaceLocked) {
-                    isSpaceLocked = true;
-                    this.startRecording();
-                }
+            recordingText = this.add.text(config.width / 2, config.height / 2 + 50,
+                'Authenticating...\nPlease wait.',
+                { fontSize: '24px', fill: '#fff', align: 'center' }
+            );
+            recordingText.setOrigin(0.5);
+
+            // Authenticate first, then set up recording
+            authenticate.call(this).then(() => {
+                recordingText.setText('Press SPACE once to start recording your voice for 3 seconds.\n\nSay something like "A chicken".\n\nThis will generate the sound for in-game use.');
+                this.startRecording = startRecording.bind(this);
+                this.input.keyboard.on('keydown-SPACE', () => {
+                    if (!isSpaceLocked) {
+                        isSpaceLocked = true;
+                        this.startRecording();
+                    }
+                });
             });
-        });
+        }
 
         console.log('Create function completed successfully');
     } catch (error) {
@@ -185,7 +193,7 @@ function stopRecording() {
         mediaRecorder.stop();
         isRecording = false;
         // We keep isSpaceLocked true here, as we don't want to allow re-recording
-        recordingText.setText('Recording complete. \n\nGame will start shortly.\n\n\n\n\n\n\n\n----\nYour Space Adventure is Brought to You By:\nAlexandre Abreu - Audio Designer\nBruno Lima - Code Genius\nMarcel Jardim - Graphic Artist\nWolfgang Dafert - AI Mananger');
+        recordingText.setText('Recording complete. \n\nGame will start shortly.\n\n\n\n\n\n\n\n----\nYour Space Adventure is Brought to You By:\nAlexandre Abreu - Audio Designer\nBruno Lima - Code Genius\nMarcel Jardim - Graphic Artist\nWolfgang Dafert - AI Manager');
     }
 }
 
@@ -242,13 +250,14 @@ async function createAudioFromBlob(audioBlob) {
 
     } catch (error) {
         console.error('Error processing audio:', error);
-  
+
     }
 }
 
 function startGame(scene) {
     currentLevel = 1;
     introText.destroy();
+    versionText.destroy();
     recordingText.destroy();
 
     // Initialize game elements
@@ -268,7 +277,7 @@ function startGame(scene) {
 
 // Update function called every frame
 function update() {
-    if (currentLevel === 0) return; // Don't update game logic on intro screen
+    if (currentLevel === 0 || currentLevel === 'end') return; // Don't update game logic on intro or end screen
 
     try {
         const levelConfig = levelConfigs[currentLevel];
@@ -355,8 +364,6 @@ function setupLevel(scene) {
 
     // Update UI
     levelText.setText('Level: ' + currentLevel);
-    score = 0;
-    scoreText.setText('Score: ' + score);
     lives = 3;
     livesText.setText('Lives: ' + lives);
 
@@ -369,6 +376,11 @@ function setupLevel(scene) {
                 // Do nothing, let it bounce naturally
             }
         });
+    }
+
+    // Spawn UFO if configured for the level
+    if (levelConfig.ufoSpawn && currentLevel === 5) {
+        spawnUFO(scene);
     }
 }
 
@@ -435,13 +447,13 @@ function shootBulletFromAsteroid(scene, asteroid) {
 // Handle bullet hitting a target (asteroid or ship)
 function bulletHitTarget(bullet, target) {
     bullet.destroy();
-    
+
     if (target.texture.key.startsWith('asteroid')) {
         splitAsteroid(this, target);
     } else {
         target.destroy();
     }
-    
+
     score += 10;
     scoreText.setText('Score: ' + score);
 }
@@ -460,12 +472,12 @@ function splitAsteroid(scene, asteroid) {
     for (let i = 0; i < numPieces; i++) {
         const piece = asteroids.create(asteroid.x, asteroid.y, asteroid.texture.key);
         piece.setScale(newScale);
-        
+
         // Set random velocity for the new piece
         const angle = Phaser.Math.Between(0, 360);
         const speed = Phaser.Math.Between(50, 150);
         scene.physics.velocityFromAngle(angle, speed, piece.body.velocity);
-        
+
         // Set random rotation
         piece.setAngularVelocity(Phaser.Math.Between(-200, 200));
     }
@@ -488,14 +500,14 @@ function spawnAsteroids(scene, count, fixedPositions) {
             y = Phaser.Math.Between(0, config.height);
         }
         const asteroid = asteroids.create(x, y, `asteroid${currentLevel}`);
-        
+
         // Set the scale based on the current level
         asteroid.setScale(0.2);
-        
+
         if (!fixedPositions) {
             asteroid.setVelocity(Phaser.Math.Between(-200, 200), Phaser.Math.Between(-200, 200));
         }
-        
+
         // Add random rotation
         asteroid.setAngularVelocity(Phaser.Math.Between(-100, 100));
     }
@@ -562,9 +574,9 @@ function shipHitAsteroid(ship, asteroid) {
     livesText.setText('Lives: ' + lives);
     if (lives <= 0) {
         // Game over logic
-        currentLevel = 0;
-        ship.destroy();
-        // You might want to add a game over screen here
+        currentLevel = 'end';
+        clearGameElements(this);
+        showEndScreen(this);
     }
 }
 
@@ -572,17 +584,20 @@ function shipHitAsteroid(ship, asteroid) {
 function checkGameOver(scene) {
     if (lives <= 0) {
         console.log('Game Over');
-        nextLevel(scene);
+        currentLevel = 'end';
+        clearGameElements(scene);
+        showEndScreen(scene);
     }
 }
 
-// Move to the next level or restart the game
+// Move to the next level or end the game
 function nextLevel(scene) {
     currentLevel++;
     if (currentLevel > 5) {
-        // Game completed logic
-        currentLevel = 0;
-        // You might want to add a game completed screen here
+        // Show end screen
+        currentLevel = 'end';
+        clearGameElements(scene);
+        showEndScreen(scene);
     } else {
         setupLevel(scene);
     }
@@ -604,7 +619,7 @@ window.onerror = function (message, source, lineno, colno, error) {
     console.error('Error object:', error);
 };
 
-// Add this function for authentication
+// Authentication function
 async function authenticate() {
     try {
         const response = await fetch('https://gj2024api-0c10722c7282.herokuapp.com/login', {
@@ -630,24 +645,25 @@ async function authenticate() {
     }
 }
 
-// Add this function to display the transcription
+// Display the transcription
 function displayTranscription(scene) {
     if (transcriptionText) {
         const transcriptionDisplay = scene.add.text(config.width / 2, config.height - 50, `Transcription: ${transcriptionText}`, { fontSize: '18px', fill: '#fff' });
         transcriptionDisplay.setOrigin(0.5);
+        endScreenElements.push(transcriptionDisplay);
     }
 }
 
 function updateBulletSound(newAudioBlob) {
     console.log("Received new bullet sound audio blob:", newAudioBlob);
-    
+
     // Create a new Audio object with the received blob
     const newAudioUrl = URL.createObjectURL(newAudioBlob);
     console.log("Created new audio URL:", newAudioUrl);
-    
+
     bulletSound = new Audio(newAudioUrl);
     console.log("Updated bulletSound with new audio");
-    
+
     // Optional: Play the new sound once to verify it works
     bulletSound.play().then(() => {
         console.log("New bullet sound played successfully");
@@ -656,3 +672,75 @@ function updateBulletSound(newAudioBlob) {
     });
 }
 
+// Function to clear all game elements
+function clearGameElements(scene) {
+    if (ship) ship.destroy();
+    if (bullets) bullets.clear(true, true);
+    if (asteroids) asteroids.clear(true, true);
+    if (levelText) levelText.destroy();
+    if (scoreText) scoreText.destroy();
+    if (livesText) livesText.destroy();
+    if (timeText) timeText.destroy();
+    endScreenElements.forEach(element => element.destroy());
+    endScreenElements = [];
+}
+
+// Function to show the end screen
+function showEndScreen(scene) {
+    // Add black background
+    const graphics = scene.add.graphics();
+    graphics.fillStyle(0x000000, 1);
+    graphics.fillRect(0, 0, config.width, config.height);
+    endScreenElements.push(graphics);
+
+    // Add end screen text
+    const endText = scene.add.text(config.width / 2, config.height / 2, 'Click ENTER to restart.', { fontSize: '48px', fill: '#fff', align: 'center' });
+    endText.setOrigin(0.5);
+    endScreenElements.push(endText);
+
+    // Listen for ENTER key to restart the game
+    const enterKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+    enterKey.once('down', () => {
+        restartGame(scene);
+    });
+}
+
+// Function to restart the game
+function restartGame(scene) {
+    // Reset all game variables
+    currentLevel = 0;
+    score = 0; // Reset score on restart
+    lives = 3;
+    transcriptionText = '';
+    bearerToken = null;
+    isSpaceLocked = false;
+
+    // Clear end screen elements
+    clearGameElements(scene);
+
+    // Re-initialize the intro screen
+    introText = scene.add.text(config.width / 2, config.height / 2 - 250, 'Paranoid Asteroids', { fontSize: '64px', fill: '#fff' });
+    introText.setOrigin(0.5);
+
+    // Add version text below the title
+    versionText = scene.add.text(config.width / 2, config.height / 2 - 180, 'Game version 0.1', { fontSize: '32px', fill: '#fff' });
+    versionText.setOrigin(0.5);
+
+    recordingText = scene.add.text(config.width / 2, config.height / 2 + 50,
+        'Authenticating...\nPlease wait.',
+        { fontSize: '24px', fill: '#fff', align: 'center' }
+    );
+    recordingText.setOrigin(0.5);
+
+    // Authenticate first, then set up recording
+    authenticate.call(scene).then(() => {
+        recordingText.setText('Press SPACE once to start recording your voice for 3 seconds.\n\nSay something like "A chicken".\n\nThis will generate the sound for in-game use.');
+        scene.startRecording = startRecording.bind(scene);
+        scene.input.keyboard.on('keydown-SPACE', () => {
+            if (!isSpaceLocked) {
+                isSpaceLocked = true;
+                scene.startRecording();
+            }
+        });
+    });
+}
